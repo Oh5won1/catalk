@@ -1,89 +1,108 @@
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
+const mongoose = require('mongoose');
 const path = require('path');
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-app.use(express.static(path.join(__dirname, 'public')));
+// 1. MongoDB 연결 (사용자님이 제공하신 URI 적용)
+const MONGO_URI = "mongodb+srv://dhttmddnjs704:mack1234@cluster0.znnzv5q.mongodb.net/?appName=Cluster0";
 
-// 임시 데이터 저장소 (서버 배포 시 초기화됨)
-const users = {}; 
-const chatRooms = {}; 
-const userSockets = {}; 
+mongoose.connect(MONGO_URI)
+  .then(() => console.log("✅ MongoDB 연결 성공! 데이터가 안전하게 저장됩니다."))
+  .catch(err => console.error("❌ MongoDB 연결 실패:", err));
+
+// 2. 데이터 모델 정의 (스키마)
+const userSchema = new mongoose.Schema({
+    username: { type: String, unique: true, required: true },
+    password: { type: String, required: true },
+    friends: [String],
+    requests: [String]
+});
+const User = mongoose.model('User', userSchema);
+
+app.use(express.static(path.join(__dirname, 'public')));
 
 io.on('connection', (socket) => {
     let loggedInUser = "";
 
-    socket.on('login', ({ username, password, isSignUp }) => {
-        if (isSignUp) {
-            if (users[username]) return socket.emit('loginError', '이미 존재하는 아이디입니다.');
-            users[username] = { password, friends: [], requests: [] };
-            socket.emit('loginSuccess', username);
-        } else {
-            if (users[username] && users[username].password === password) {
-                loggedInUser = username;
-                userSockets[username] = socket.id;
+    // 로그인 및 회원가입 처리
+    socket.on('login', async ({ username, password, isSignUp }) => {
+        try {
+            if (isSignUp) {
+                const existing = await User.findOne({ username });
+                if (existing) return socket.emit('loginError', '이미 존재하는 아이디입니다.');
+                
+                const newUser = new User({ username, password, friends: [], requests: [] });
+                await newUser.save();
                 socket.emit('loginSuccess', username);
-                socket.emit('updateFriends', users[username].friends || []);
-                socket.emit('updateRequests', users[username].requests || []);
             } else {
-                socket.emit('loginError', '아이디 또는 비밀번호가 틀렸거나 서버가 재시작되어 계정이 삭제되었습니다. 다시 회원가입 해주세요.');
+                const user = await User.findOne({ username, password });
+                if (user) {
+                    loggedInUser = username;
+                    socket.emit('loginSuccess', username);
+                    socket.emit('updateFriends', user.friends);
+                    socket.emit('updateRequests', user.requests);
+                } else {
+                    socket.emit('loginError', '아이디 또는 비번이 틀립니다. 다시 확인해주세요.');
+                }
             }
+        } catch (e) {
+            socket.emit('loginError', '서버 통신 중 오류가 발생했습니다.');
         }
     });
 
-    socket.on('sendFriendRequest', (targetName) => {
-        if (!users[targetName]) return socket.emit('sysError', '사용자를 찾을 수 없습니다.');
-        if (targetName === loggedInUser) return socket.emit('sysError', '자기 자신은 추가할 수 없습니다.');
-        if (users[targetName].friends.includes(loggedInUser)) return socket.emit('sysError', '이미 친구입니다.');
-        
-        if (!users[targetName].requests.includes(loggedInUser)) {
-            users[targetName].requests.push(loggedInUser);
-        }
-
-        if (userSockets[targetName]) {
-            io.to(userSockets[targetName]).emit('updateRequests', users[targetName].requests);
-        }
-        socket.emit('sysError', '친구 요청을 보냈습니다.');
-    });
-
-    socket.on('respondRequest', ({ sender, accept }) => {
-        if (!users[loggedInUser]) return;
-        users[loggedInUser].requests = users[loggedInUser].requests.filter(u => u !== sender);
-
-        if (accept) {
-            if (!users[loggedInUser].friends.includes(sender)) users[loggedInUser].friends.push(sender);
-            if (!users[sender].friends.includes(loggedInUser)) users[sender].friends.push(loggedInUser);
+    // 친구 요청 보내기
+    socket.on('sendFriendRequest', async (targetName) => {
+        try {
+            const target = await User.findOne({ username: targetName });
+            if (!target) return socket.emit('sysError', '상대방을 찾을 수 없습니다.');
+            if (targetName === loggedInUser) return socket.emit('sysError', '자신에게는 보낼 수 없습니다.');
             
-            socket.emit('updateFriends', users[loggedInUser].friends);
-            if (userSockets[sender]) {
-                io.to(userSockets[sender]).emit('updateFriends', users[sender].friends);
+            if (!target.requests.includes(loggedInUser) && !target.friends.includes(loggedInUser)) {
+                target.requests.push(loggedInUser);
+                await target.save();
+                socket.emit('sysError', '친구 요청을 보냈습니다!');
+            } else {
+                socket.emit('sysError', '이미 친구이거나 대기 중인 요청이 있습니다.');
             }
-        }
-        socket.emit('updateRequests', users[loggedInUser].requests);
+        } catch (e) { console.error(e); }
     });
 
+    // 친구 요청 수락/거절
+    socket.on('respondRequest', async ({ sender, accept }) => {
+        try {
+            const me = await User.findOne({ username: loggedInUser });
+            const other = await User.findOne({ username: sender });
+
+            me.requests = me.requests.filter(name => name !== sender);
+            
+            if (accept) {
+                if(!me.friends.includes(sender)) me.friends.push(sender);
+                if(!other.friends.includes(loggedInUser)) other.friends.push(loggedInUser);
+                await other.save();
+            }
+            await me.save();
+            
+            socket.emit('updateFriends', me.friends);
+            socket.emit('updateRequests', me.requests);
+        } catch (e) { console.error(e); }
+    });
+
+    // 채팅 로직
     socket.on('joinRoom', (friend) => {
-        const roomName = [loggedInUser, friend].sort().join('-');
-        socket.join(roomName);
-        socket.emit('loadHistory', chatRooms[roomName] || []);
+        const room = [loggedInUser, friend].sort().join('-');
+        socket.join(room);
     });
 
     socket.on('sendMessage', (data) => {
-        const roomName = [data.sender, data.receiver].sort().join('-');
-        const msg = { ...data, timestamp: new Date().toLocaleTimeString() };
-        if (!chatRooms[roomName]) chatRooms[roomName] = [];
-        chatRooms[roomName].push(msg);
-        io.to(roomName).emit('receiveMessage', msg);
-    });
-
-    socket.on('disconnect', () => {
-        if (loggedInUser) delete userSockets[loggedInUser];
+        const room = [data.sender, data.receiver].sort().join('-');
+        io.to(room).emit('receiveMessage', data);
     });
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+server.listen(PORT, () => console.log(`Server is running on port ${PORT}`));
