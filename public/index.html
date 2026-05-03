@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI KakaoTalk Clone</title>
+    <title>AI KakaoTalk</title>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/models/blazeface"></script>
     <style>
@@ -15,50 +15,46 @@
 
         /* 로그인 */
         #login-screen { height: 100%; background: var(--kakao-yellow); justify-content: center; align-items: center; padding: 40px; box-sizing: border-box; }
-        input { padding: 12px; margin-bottom: 8px; border: 1px solid #ddd; border-radius: 4px; }
-        button.primary { background: var(--kakao-brown); color: var(--kakao-yellow); border: none; padding: 12px; font-weight: bold; cursor: pointer; }
+        input { padding: 12px; margin-bottom: 8px; border: 1px solid #ddd; border-radius: 4px; width: 100%; box-sizing: border-box; }
+        button.primary { background: var(--kakao-brown); color: var(--kakao-yellow); border: none; padding: 12px; font-weight: bold; cursor: pointer; width: 100%; }
 
-        /* 헤더/탭 */
-        .header { padding: 20px; font-weight: bold; display: flex; justify-content: space-between; align-items: center; background: white; }
+        /* 헤더 */
+        .header { padding: 20px; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }
         .tab-bar { height: 60px; background: #f9f9f9; border-top: 1px solid #eee; display: flex; justify-content: space-around; align-items: center; }
         .tab-item { cursor: pointer; text-align: center; font-size: 11px; color: #999; }
         .tab-item.active { color: #333; font-weight: bold; }
 
-        /* 친구 목록 & 요청 */
-        #friend-list { flex: 1; overflow-y: auto; }
-        .friend-item { padding: 12px 20px; display: flex; align-items: center; cursor: pointer; border-bottom: 1px solid #f9f9f9; }
-        .friend-item:hover { background: #f5f5f5; }
-        .profile-circle { width: 40px; height: 40px; background: #ddd; border-radius: 15px; margin-right: 12px; }
-        #request-area { background: #fffbe6; border-bottom: 1px solid #eee; padding: 5px 0; }
+        /* 친구목록 */
+        #request-area { background: #fffbe6; padding: 5px 0; border-bottom: 1px solid #eee; }
         .req-item { padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; font-size: 13px; }
+        .friend-item { padding: 12px 20px; display: flex; align-items: center; cursor: pointer; border-bottom: 1px solid #f9f9f9; }
+        .profile-circle { width: 40px; height: 40px; background: #ddd; border-radius: 15px; margin-right: 12px; }
 
         /* 채팅 */
         #chat-screen { background: var(--bg-blue); }
         #chat-box { flex: 1; overflow-y: auto; padding: 15px; display: flex; flex-direction: column; gap: 8px; }
-        .msg { padding: 8px 12px; border-radius: 8px; font-size: 14px; max-width: 70%; position: relative; }
+        .msg { padding: 8px 12px; border-radius: 8px; font-size: 14px; max-width: 70%; }
         .my { background: var(--kakao-yellow); align-self: flex-end; }
         .other { background: white; align-self: flex-start; }
 
-        /* AI 보안 모드 */
+        /* AI 보안 */
         #security-overlay { display: none; position: absolute; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.95); z-index: 2000; color: white; justify-content: center; align-items: center; text-align: center; }
-        #cam-view { position: absolute; bottom: 70px; right: 10px; width: 60px; height: 45px; border-radius: 5px; opacity: 0.3; pointer-events: none; }
+        #cam-view { position: absolute; bottom: 70px; right: 10px; width: 60px; height: 45px; border-radius: 5px; opacity: 0.1; pointer-events: none; }
     </style>
 </head>
 <body>
 
 <div id="app">
-    <div id="security-overlay"><div><h2>🔒 보안 모드 작동 중</h2><p>사용자 얼굴이 보이지 않습니다.</p></div></div>
+    <div id="security-overlay"><div><h2>🔒 보안 모드</h2><p>사용자가 자리를 비웠습니다.</p></div></div>
 
-    <!-- 로그인 -->
     <div id="login-screen" class="screen active">
-        <h2 style="color:var(--kakao-brown)">KakaoTalk AI</h2>
-        <input type="text" id="username" placeholder="아이디" style="width:100%">
-        <input type="password" id="password" placeholder="비밀번호" style="width:100%">
-        <button class="primary" onclick="login(false)" style="width:100%">로그인</button>
-        <button onclick="login(true)" style="width:100%; margin-top:10px; background:none; border:1px solid #333; padding:10px">회원가입</button>
+        <h2 style="color:var(--kakao-brown); text-align:center;">KakaoTalk AI</h2>
+        <input type="text" id="username" placeholder="아이디">
+        <input type="password" id="password" placeholder="비밀번호">
+        <button class="primary" onclick="login(false)">로그인</button>
+        <button onclick="login(true)" style="width:100%; margin-top:10px; background:none; border:1px solid #333; padding:10px; cursor:pointer;">회원가입</button>
     </div>
 
-    <!-- 친구 목록 -->
     <div id="list-screen" class="screen">
         <div class="header"><span>친구</span><span onclick="sendRequest()" style="cursor:pointer; font-size:20px">+</span></div>
         <div id="request-area" style="display:none">
@@ -67,24 +63,21 @@
         <div id="friend-list"></div>
     </div>
 
-    <!-- 채팅 -->
     <div id="chat-screen" class="screen">
         <div class="header" style="background:var(--bg-blue)">
             <span onclick="showScreen('list-screen')" style="cursor:pointer">←</span>
             <span id="chat-title">대화방</span>
-            <select id="lang-select"><option value="ko">KO</option><option value="en">EN</option></select>
         </div>
         <div id="chat-box"></div>
         <div style="background:white; padding:10px; display:flex">
             <input type="text" id="msg-input" style="flex:1; border:none; outline:none" placeholder="메시지 입력..." onkeypress="if(event.key==='Enter') send()">
-            <button onclick="send()" style="border:none; background:var(--kakao-yellow); padding:5px 15px">전송</button>
+            <button onclick="send()" style="border:none; background:var(--kakao-yellow); padding:5px 15px; cursor:pointer;">전송</button>
         </div>
     </div>
 
     <div id="tab-bar" class="tab-bar" style="display:none">
         <div class="tab-item active" onclick="showScreen('list-screen')">👤<br>친구</div>
-        <div class="tab-item" onclick="alert('채팅방 목록은 친구를 선택하여 입장하세요!')">💬<br>채팅</div>
-        <div class="tab-item" onclick="location.reload()">🔄<br>로그아웃</div>
+        <div class="tab-item" onclick="logout()">🔄<br>로그아웃</div>
     </div>
 
     <video id="cam-view" autoplay muted></video>
@@ -95,10 +88,31 @@
     const socket = io();
     let me = "", target = "", model;
 
+    // [중요] 페이지 로드 시 로그인 정보 확인
+    window.onload = () => {
+        const savedUser = localStorage.getItem('chat_user');
+        const savedPass = localStorage.getItem('chat_pass');
+        if(savedUser && savedPass) {
+            socket.emit('login', { username: savedUser, password: savedPass, isSignUp: false });
+        }
+    };
+
     function login(isSignUp) {
         const u = document.getElementById('username').value;
         const p = document.getElementById('password').value;
+        if(!u || !p) return alert("입력해주세요.");
+        
+        // 로그인 성공 시 로컬스토리지 저장용으로 미리 세팅
+        if(!isSignUp) {
+            localStorage.setItem('chat_user', u);
+            localStorage.setItem('chat_pass', p);
+        }
         socket.emit('login', { username: u, password: p, isSignUp });
+    }
+
+    function logout() {
+        localStorage.clear();
+        location.reload();
     }
 
     socket.on('loginSuccess', (user) => {
@@ -108,33 +122,37 @@
         initAI();
     });
 
-    socket.on('loginError', (m) => alert(m));
-    socket.on('sysError', (m) => alert(m));
+    socket.on('loginError', (m) => {
+        localStorage.clear();
+        alert(m);
+    });
 
-    // 친구 요청 처리
     function sendRequest() {
-        const t = prompt("요청할 상대의 아이디:");
+        const t = prompt("친구 아이디:");
         if(t) socket.emit('sendFriendRequest', t);
     }
 
     socket.on('updateRequests', (reqs) => {
         const area = document.getElementById('request-area');
         const list = document.getElementById('request-list');
-        if(reqs.length > 0) {
+        if(reqs && reqs.length > 0) {
             area.style.display = 'block';
             list.innerHTML = reqs.map(r => `
                 <div class="req-item">
-                    <span><b>${r}</b>님의 요청</span>
+                    <span><b>${r}</b>님</span>
                     <div>
-                        <button onclick="respond('${r}', true)" style="background:#4caf50; color:white; border:none; padding:4px 8px; border-radius:3px">수락</button>
-                        <button onclick="respond('${r}', false)" style="background:#f44336; color:white; border:none; padding:4px 8px; border-radius:3px">거절</button>
+                        <button onclick="respond('${r}', true)" style="background:#4caf50; color:white; border:none; padding:4px 8px; cursor:pointer;">수락</button>
+                        <button onclick="respond('${r}', false)" style="background:#f44336; color:white; border:none; padding:4px 8px; cursor:pointer;">거절</button>
                     </div>
                 </div>
             `).join('');
         } else { area.style.display = 'none'; }
     });
 
-    function respond(sender, accept) { socket.emit('respondRequest', { sender, accept }); }
+    // 전역 함수로 등록하여 HTML에서 접근 가능하게 수정
+    window.respond = (sender, accept) => {
+        socket.emit('respondRequest', { sender, accept });
+    };
 
     socket.on('updateFriends', (friends) => {
         const list = document.getElementById('friend-list');
@@ -146,7 +164,6 @@
         `).join('');
     });
 
-    // 채팅 처리
     function openChat(f) {
         target = f;
         document.getElementById('chat-title').innerText = f;
@@ -158,7 +175,7 @@
     function send() {
         const input = document.getElementById('msg-input');
         if(!input.value) return;
-        socket.emit('sendMessage', { sender: me, receiver: target, text: input.value, lang: document.getElementById('lang-select').value });
+        socket.emit('sendMessage', { sender: me, receiver: target, text: input.value, lang: 'ko' });
         input.value = '';
     }
 
@@ -170,35 +187,24 @@
         document.getElementById('chat-box').scrollTop = document.getElementById('chat-box').scrollHeight;
     });
 
-    socket.on('loadHistory', history => {
-        history.forEach(msg => {
-            const div = document.createElement('div');
-            div.className = `msg ${msg.sender === me ? 'my' : 'other'}`;
-            div.innerText = msg.text;
-            document.getElementById('chat-box').appendChild(div);
-        });
-        document.getElementById('chat-box').scrollTop = document.getElementById('chat-box').scrollHeight;
-    });
-
     function showScreen(id) {
         document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
         document.getElementById(id).classList.add('active');
     }
 
-    // AI 동작 인식
     async function initAI() {
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ video: true });
             document.getElementById('cam-view').srcObject = stream;
             model = await blazeface.load();
             detect();
-        } catch(e) { console.log("카메라 권한 거부됨"); }
+        } catch(e) { console.log("카메라 오류"); }
     }
 
     async function detect() {
         const predictions = await model.estimateFaces(document.getElementById('cam-view'), false);
         document.getElementById('security-overlay').style.display = predictions.length === 0 ? 'flex' : 'none';
-        setTimeout(detect, 600);
+        setTimeout(detect, 700);
     }
 </script>
 </body>
