@@ -9,78 +9,95 @@ const io = new Server(server);
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-// 데이터 저장용 (실제 서비스 시에는 DB 연결 권장)
-const users = {}; // { username: { password, friends: [] } }
-const chatRooms = {}; // { "user1-user2": [messages] }
+// 데이터 저장소 (서버 재시작 시 초기화됨)
+const users = {}; // { username: { password, friends: [], requests: [] } }
+const chatRooms = {}; 
+const userSockets = {}; // 실시간 알림을 위한 소켓 저장소
 
 io.on('connection', (socket) => {
     let loggedInUser = "";
 
-    // 1. 회원가입 및 로그인
+    // [로그인/회원가입]
     socket.on('login', ({ username, password, isSignUp }) => {
         if (isSignUp) {
             if (users[username]) return socket.emit('loginError', '이미 존재하는 아이디입니다.');
-            users[username] = { password, friends: [] };
+            users[username] = { password, friends: [], requests: [] };
             socket.emit('loginSuccess', username);
         } else {
             if (users[username] && users[username].password === password) {
                 loggedInUser = username;
+                userSockets[username] = socket.id;
                 socket.emit('loginSuccess', username);
                 socket.emit('updateFriends', users[username].friends);
+                socket.emit('updateRequests', users[username].requests);
             } else {
                 socket.emit('loginError', '아이디 또는 비밀번호가 틀렸습니다.');
             }
         }
     });
 
-    // 2. 친구 추가
-    socket.on('addFriend', (friendName) => {
-        if (users[friendName] && friendName !== loggedInUser) {
-            if (!users[loggedInUser].friends.includes(friendName)) {
-                users[loggedInUser].friends.push(friendName);
-                socket.emit('updateFriends', users[loggedInUser].friends);
-            } else {
-                socket.emit('sysError', '이미 친구 목록에 있습니다.');
-            }
-        } else {
-            socket.emit('sysError', '사용자를 찾을 수 없습니다.');
+    // [친구 요청 보내기]
+    socket.on('sendFriendRequest', (targetName) => {
+        if (!users[targetName]) return socket.emit('sysError', '사용자를 찾을 수 없습니다.');
+        if (targetName === loggedInUser) return socket.emit('sysError', '나 자신은 추가할 수 없습니다.');
+        if (users[targetName].friends.includes(loggedInUser)) return socket.emit('sysError', '이미 친구입니다.');
+        if (users[targetName].requests.includes(loggedInUser)) return socket.emit('sysError', '이미 요청을 보냈습니다.');
+
+        users[targetName].requests.push(loggedInUser);
+        
+        // 상대방이 접속 중이면 즉시 요청 알림 업데이트
+        if (userSockets[targetName]) {
+            io.to(userSockets[targetName]).emit('updateRequests', users[targetName].requests);
         }
+        socket.emit('sysError', '친구 요청을 보냈습니다.');
     });
 
-    // 3. 1:1 대화방 입장 및 기록 로드
-    socket.on('joinRoom', (friendName) => {
-        const roomName = [loggedInUser, friendName].sort().join('-');
+    // [친구 요청 수락/거절 처리]
+    socket.on('respondRequest', ({ sender, accept }) => {
+        if (!users[loggedInUser]) return;
+        
+        // 요청 목록에서 제거
+        users[loggedInUser].requests = users[loggedInUser].requests.filter(u => u !== sender);
+
+        if (accept) {
+            // 양방향 친구 추가
+            if (!users[loggedInUser].friends.includes(sender)) users[loggedInUser].friends.push(sender);
+            if (!users[sender].friends.includes(loggedInUser)) users[sender].friends.push(loggedInUser);
+            
+            // 실시간 목록 업데이트 전송
+            socket.emit('updateFriends', users[loggedInUser].friends);
+            if (userSockets[sender]) {
+                io.to(userSockets[sender]).emit('updateFriends', users[sender].friends);
+            }
+        }
+        
+        socket.emit('updateRequests', users[loggedInUser].requests);
+    });
+
+    // [채팅방 입장]
+    socket.on('joinRoom', (friend) => {
+        const roomName = [loggedInUser, friend].sort().join('-');
         socket.join(roomName);
-        const history = chatRooms[roomName] || [];
-        socket.emit('loadHistory', history);
+        socket.emit('loadHistory', chatRooms[roomName] || []);
     });
 
-    // 4. 메시지 전송 및 자동 번역(Mock)
+    // [메시지 전송]
     socket.on('sendMessage', (data) => {
         const roomName = [data.sender, data.receiver].sort().join('-');
-        
-        // 실제 번역 API 연결 전 가이드: 설정 언어에 따라 말머리 부여
-        const translatedText = `[${data.lang.toUpperCase()}] ${data.text}`;
-        const msgObj = { 
+        const msg = { 
             ...data, 
-            text: translatedText, 
+            text: `[${data.lang.toUpperCase()}] ${data.text}`,
             timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) 
         };
-        
         if (!chatRooms[roomName]) chatRooms[roomName] = [];
-        chatRooms[roomName].push(msgObj);
-
-        io.to(roomName).emit('receiveMessage', msgObj);
+        chatRooms[roomName].push(msg);
+        io.to(roomName).emit('receiveMessage', msg);
     });
 
-    // 5. 동작 감지 상태 공유 (온라인/자리비움)
-    socket.on('statusChange', (data) => {
-        socket.broadcast.emit('userStatusUpdate', data);
+    socket.on('disconnect', () => {
+        if (loggedInUser) delete userSockets[loggedInUser];
     });
 });
 
-// 포트 설정 (Render 배포를 위해 process.env.PORT 사용)
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-    console.log(`서버가 http://localhost:${PORT} 에서 작동 중입니다.`);
-});
+server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
