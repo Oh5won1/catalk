@@ -2,49 +2,83 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>AI KakaoTalk DB</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>AI Global Talk</title>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/models/blazeface"></script>
     <style>
         :root { --k-y: #FEE500; --k-b: #391B1B; --bg: #b2c7d9; }
-        body { margin: 0; font-family: sans-serif; background: #eee; display: flex; justify-content: center; align-items: center; height: 100vh; }
-        #app { width: 360px; height: 640px; background: white; position: relative; overflow: hidden; display: flex; flex-direction: column; }
-        .page { display: none; flex-direction: column; height: calc(100% - 60px); }
+        body { margin: 0; font-family: sans-serif; background: #eee; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; }
+        #app { width: 100%; max-width: 360px; height: 100%; max-height: 640px; background: white; position: relative; display: flex; flex-direction: column; }
+        .page { display: none; flex-direction: column; height: calc(100% - 60px); width: 100%; }
         .active { display: flex; }
+        
+        /* 보안 레이어 (휴대폰 전체 가림) */
+        #security-layer { 
+            display: none; position: absolute; top:0; left:0; width:100%; height:100%; 
+            background: #000; z-index: 9999; color: white; 
+            flex-direction: column; justify-content: center; align-items: center; 
+        }
+
         #login-page { height: 100%; background: var(--k-y); justify-content: center; padding: 40px; box-sizing: border-box; }
-        input { width: 100%; padding: 12px; margin-bottom: 5px; border: 1px solid #ddd; border-radius: 4px; }
-        .btn { width: 100%; padding: 12px; border: none; font-weight: bold; cursor: pointer; }
-        .header { padding: 15px; font-weight: bold; display: flex; justify-content: space-between; border-bottom: 1px solid #eee; }
+        input, select { width: 100%; padding: 12px; margin-bottom: 8px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
+        .btn { width: 100%; padding: 12px; border: none; font-weight: bold; cursor: pointer; border-radius: 4px; }
+        
+        .header { padding: 15px; font-weight: bold; display: flex; justify-content: space-between; border-bottom: 1px solid #eee; background: white; }
         #footer { height: 60px; display: none; justify-content: space-around; align-items: center; background: #f9f9f9; border-top: 1px solid #eee; }
-        /* 보안 모드 오버레이 */
-        #security-layer { display: none; position: absolute; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.9); z-index:9999; color:white; justify-content:center; align-items:center; flex-direction:column; }
+        
+        #c-box { flex:1; background: var(--bg); overflow-y:auto; padding:10px; display:flex; flex-direction:column; }
+        .msg { padding:8px 12px; margin:5px; border-radius:10px; max-width:75%; word-break:break-all; font-size: 14px; }
+        
+        /* 번역 선택 바 */
+        .trans-bar { padding: 5px 10px; background: #eee; display: flex; align-items: center; gap: 5px; font-size: 12px; }
     </style>
 </head>
 <body>
 <div id="app">
-    <!-- 보안 오버레이 -->
-    <div id="security-layer"><h2>🔒 보안 모드</h2><p>자리를 비우면 화면이 가려집니다.</p></div>
+    <!-- 보안막 (휴대폰 전용) -->
+    <div id="security-layer">
+        <div style="font-size: 40px; margin-bottom: 20px;">🔒</div>
+        <div style="font-size: 18px; font-weight: bold;">보안 모드 작동 중</div>
+        <div style="font-size: 12px; margin-top: 10px; color: #aaa;">화면 앞에 사람이 감지되지 않습니다.</div>
+    </div>
     
+    <!-- 로그인 -->
     <div id="login-page" class="page active">
-        <h2 style="text-align:center">KakaoTalk AI</h2>
+        <h2 style="text-align:center; color:var(--k-b)">AI Global Talk</h2>
         <input id="u" placeholder="아이디">
         <input id="p" type="password" placeholder="비밀번호">
         <button class="btn" style="background:var(--k-b); color:var(--k-y)" onclick="auth(false)">로그인</button>
         <button class="btn" style="background:none; border:1px solid #333; margin-top:5px" onclick="auth(true)">회원가입</button>
     </div>
 
+    <!-- 친구 목록 -->
     <div id="list-page" class="page">
-        <div class="header"><span>친구</span><span onclick="addF()" style="cursor:pointer">+</span></div>
+        <div class="header"><span>친구 목록</span><span onclick="addF()" style="cursor:pointer; font-size: 20px;">+</span></div>
         <div id="req-box" style="background:#fff9c4"></div>
         <div id="f-list" style="flex:1; overflow-y:auto"></div>
     </div>
 
+    <!-- 채팅창 -->
     <div id="chat-page" class="page">
-        <div class="header" style="background:var(--bg)"><span onclick="showP('list-page')">←</span><span id="c-t"></span></div>
-        <div id="c-box" style="flex:1; background:var(--bg); overflow-y:auto; padding:10px; display:flex; flex-direction:column"></div>
+        <div class="header" style="background:var(--bg)"><span onclick="showP('list-page')">←</span><span id="c-t"></span><span></span></div>
+        
+        <!-- 번역 설정 바 -->
+        <div class="trans-bar">
+            <span>번역:</span>
+            <select id="lang-sel" style="width:auto; padding:2px; margin:0; font-size:11px;">
+                <option value="ko">한국어</option>
+                <option value="en">English (영어)</option>
+                <option value="ja">日本語 (일본어)</option>
+                <option value="es">Español (스페인어)</option>
+            </select>
+        </div>
+
+        <div id="c-box"></div>
+        
         <div style="display:flex; padding:10px; background:white;">
-            <input id="m-i" style="flex:1" onkeypress="if(event.key==='Enter') send()">
-            <button onclick="send()" style="background:var(--k-y); border:none; padding:10px;">전송</button>
+            <input id="m-i" style="flex:1; margin:0" onkeypress="if(event.key==='Enter') send()" placeholder="메시지 입력...">
+            <button onclick="send()" style="background:var(--k-y); border:none; padding:10px 15px; margin-left:5px; font-weight:bold;">전송</button>
         </div>
     </div>
 
@@ -52,8 +86,9 @@
         <div onclick="showP('list-page')" style="cursor:pointer">👤</div>
         <div onclick="logout()" style="cursor:pointer">🔄</div>
     </div>
-    <!-- AI 감지용 비디오 (숨김) -->
-    <video id="v" style="display:none" autoplay muted></video>
+
+    <!-- 휴대폰 카메라 인라인 재생 (핵심) -->
+    <video id="v" style="display:none" autoplay muted playsinline></video>
 </div>
 
 <script src="/socket.io/socket.io.js"></script>
@@ -68,6 +103,7 @@
 
     function auth(isSignUp) {
         const u = document.getElementById('u').value, p = document.getElementById('p').value;
+        if(!u || !p) return alert("입력해주세요!");
         if(!isSignUp) { localStorage.setItem('u', u); localStorage.setItem('p', p); }
         socket.emit('login', { username: u, password: p, isSignUp });
     }
@@ -78,27 +114,27 @@
         me = u; 
         document.getElementById('footer').style.display='flex'; 
         showP('list-page');
-        initAI(); // 로그인 성공 시 AI 보안 시작
+        initAI(); 
     });
 
     socket.on('loginError', m => { alert(m); logout(); });
     socket.on('sysError', m => alert(m));
 
-    function addF() { const t = prompt("친구 아이디:"); if(t) socket.emit('sendFriendRequest', t); }
+    function addF() { const t = prompt("추가할 아이디:"); if(t) socket.emit('sendFriendRequest', t); }
 
     socket.on('updateRequests', rs => {
         document.getElementById('req-box').innerHTML = rs.map(r => `
-            <div style="padding:10px; border-bottom:1px solid #ddd; display:flex; justify-content:space-between">
-                ${r} <button onclick="socket.emit('respondRequest',{sender:'${r}',accept:true})">수락</button>
+            <div style="padding:10px; border-bottom:1px solid #ddd; display:flex; justify-content:space-between; align-items:center;">
+                <span>${r}님의 요청</span>
+                <button onclick="socket.emit('respondRequest',{sender:'${r}',accept:true})" style="background:#4caf50; color:white; border:none; padding:5px 10px; border-radius:3px;">수락</button>
             </div>
         `).join('');
     });
 
     socket.on('updateFriends', fs => {
-        document.getElementById('f-list').innerHTML = fs.map(f => `<div onclick="goChat('${f}')" style="padding:15px; border-bottom:1px solid #eee; cursor:pointer">👤 ${f}</div>`).join('');
+        document.getElementById('f-list').innerHTML = fs.map(f => `<div onclick="goChat('${f}')" style="padding:15px; border-bottom:1px solid #eee; cursor:pointer;">👤 ${f}</div>`).join('');
     });
 
-    // 이전 대화 기록 불러오기
     socket.on('loadHistory', history => {
         const box = document.getElementById('c-box');
         box.innerHTML = '';
@@ -113,17 +149,25 @@
 
     async function send() {
         const i = document.getElementById('m-i');
+        const l = document.getElementById('lang-sel').value;
         let text = i.value;
         if(!text) return;
 
-        // [추가] 번역 기능 (영어 포함 시 한국어로 번역 요청 - 예시용 간이 로직)
-        if(/[a-zA-Z]/.test(text)) {
-            const res = await fetch(`https://api.mymemory.translated.net/get?q=${text}&langpair=en|ko`);
+        i.value = '번역 중...'; // 전송 중 상태 표시
+        
+        try {
+            // MyMemory API 사용 (무료 번역)
+            const res = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=ko|${l}`);
             const data = await res.json();
-            text = `${text} (번역: ${data.responseData.translatedText})`;
+            const translated = data.responseData.translatedText;
+            
+            // 한국어 선택 시에는 번역본 생략, 타 언어 선택 시 병기
+            const finalMsg = (l === 'ko') ? text : `${text}\n🌐 (${translated})`;
+            
+            socket.emit('sendMessage', { sender: me, receiver: target, text: finalMsg });
+        } catch(e) {
+            socket.emit('sendMessage', { sender: me, receiver: target, text: text });
         }
-
-        socket.emit('sendMessage', { sender: me, receiver: target, text: text });
         i.value = '';
     }
 
@@ -132,7 +176,8 @@
     function renderMsg(m) {
         const box = document.getElementById('c-box');
         const d = document.createElement('div');
-        d.style = `padding:8px; margin:5px; border-radius:5px; max-width:70%; word-break:break-all; ${m.sender===me?'align-self:flex-end; background:var(--k-y)':'align-self:flex-start; background:white'}`;
+        d.className = 'msg';
+        d.style = `${m.sender===me ? 'align-self:flex-end; background:var(--k-y)' : 'align-self:flex-start; background:white; border:1px solid #ddd'}`;
         d.innerText = m.text;
         box.appendChild(d);
         box.scrollTop = box.scrollHeight;
@@ -143,17 +188,26 @@
         document.getElementById(id).classList.add('active');
     }
 
-    // AI 동작 감지 기능
+    // 휴대폰 최적화 AI 감지
     async function initAI() {
+        const v = document.getElementById('v');
+        const layer = document.getElementById('security-layer');
         try {
-            const s = await navigator.mediaDevices.getUserMedia({ video: true });
-            document.getElementById('v').srcObject = s;
+            const stream = await navigator.mediaDevices.getUserMedia({ 
+                video: { facingMode: "user" }, // 전면 카메라
+                audio: false 
+            });
+            v.srcObject = stream;
             model = await blazeface.load();
+            
             setInterval(async () => {
-                const p = await model.estimateFaces(document.getElementById('v'), false);
-                document.getElementById('security-layer').style.display = p.length === 0 ? 'flex' : 'none';
+                if (v.readyState === v.HAVE_ENOUGH_DATA) {
+                    const p = await model.estimateFaces(v, false);
+                    // 감지된 얼굴이 없으면 가림막 flex, 있으면 none
+                    layer.style.display = p.length === 0 ? 'flex' : 'none';
+                }
             }, 1000);
-        } catch(e) { console.log("카메라 권한 필요"); }
+        } catch(e) { console.log("카메라 권한 거부됨"); }
     }
 </script>
 </body>
