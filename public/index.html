@@ -18,6 +18,13 @@
             flex-direction: column; justify-content: center; align-items: center; 
         }
 
+        /* AI 상태 표시기 (테스트용) */
+        #ai-status { 
+            position: fixed; top: 0; width: 100%; background: rgba(0,0,0,0.6); 
+            color: #0f0; font-size: 10px; text-align: center; z-index: 1000000; padding: 2px;
+            pointer-events: none; 
+        }
+
         .page { display: none; flex-direction: column; height: calc(100% - 60px); width: 100%; }
         .active { display: flex; }
         #login-page { height: 100%; background: var(--k-y); justify-content: center; padding: 40px; box-sizing: border-box; }
@@ -26,7 +33,7 @@
         
         .header { padding: 15px; font-weight: bold; display: flex; justify-content: space-between; border-bottom: 1px solid #eee; background: white; }
         #c-box { flex:1; background: var(--bg); overflow-y:auto; padding:10px; display:flex; flex-direction:column; }
-        .msg { padding:8px 12px; margin:5px; border-radius:10px; max-width:75%; word-break:break-all; font-size: 14px; }
+        .msg { padding:8px 12px; margin:5px; border-radius:10px; max-width:75%; word-break:break-all; font-size: 14px; position: relative; }
         .trans-text { font-size: 11px; color: #555; margin-top: 4px; border-top: 1px dashed #ccc; padding-top: 4px; }
         
         .trans-bar { padding: 8px; background: #f0f0f0; display: flex; align-items: center; gap: 8px; font-size: 11px; border-bottom: 1px solid #ddd; }
@@ -35,13 +42,17 @@
 </head>
 <body>
 <div id="app">
+    <!-- AI 상태바 -->
+    <div id="ai-status">AI 대기 중...</div>
+
     <!-- 보안 레이어 -->
     <div id="security-layer">
         <div style="font-size: 50px;">🔒</div>
         <div style="font-size: 20px; font-weight: bold; margin-top:20px;">보안 모드 작동 중</div>
-        <p style="color: #888;">화면을 보고 있지 않습니다.</p>
+        <p style="color: #888;">주변에 사용자가 감지되지 않습니다.</p>
     </div>
     
+    <!-- 로그인 페이지 -->
     <div id="login-page" class="page active">
         <h2 style="text-align:center;">Global AI Talk</h2>
         <input id="u" placeholder="아이디">
@@ -50,16 +61,18 @@
         <button class="btn" style="background:none; border:1px solid #333; margin-top:5px" onclick="auth(true)">회원가입</button>
     </div>
 
+    <!-- 리스트 페이지 -->
     <div id="list-page" class="page">
         <div class="header"><span>친구 목록</span><span onclick="addF()" style="cursor:pointer; font-size: 20px;">+</span></div>
         <div id="req-box"></div>
         <div id="f-list" style="flex:1; overflow-y:auto"></div>
     </div>
 
+    <!-- 채팅 페이지 -->
     <div id="chat-page" class="page">
         <div class="header" style="background:var(--bg)"><span onclick="showP('list-page')">←</span><span id="c-t"></span><span></span></div>
         <div class="trans-bar">
-            <strong>내가 보고 싶은 언어:</strong>
+            <strong>자동 번역 언어:</strong>
             <select id="my-lang" style="width:auto; padding:2px;">
                 <option value="ko">한국어</option>
                 <option value="en">English</option>
@@ -79,7 +92,7 @@
         <div onclick="logout()" style="cursor:pointer">🔄</div>
     </div>
 
-    <!-- 휴대폰 최적화: 1px로 실제 렌더링하여 브라우저 가속 유지 -->
+    <!-- 카메라 요소 (휴대폰 가속 유지용) -->
     <video id="v" style="position: fixed; top: 0; left: 0; width: 1px; height: 1px; opacity: 0.1; pointer-events: none;" autoplay muted playsinline></video>
     <canvas id="c" style="display:none;"></canvas>
 </div>
@@ -88,6 +101,7 @@
 <script>
     const socket = io();
     let me = "", target = "", model;
+    const aiStatus = document.getElementById('ai-status');
 
     function auth(isSignUp) {
         const u = document.getElementById('u').value, p = document.getElementById('p').value;
@@ -135,13 +149,11 @@
 
     socket.on('receiveMessage', m => renderMsg(m));
 
-    // 수신자 언어에 맞춰 번역 렌더링
     async function renderMsg(m) {
         const box = document.getElementById('c-box');
         const myLang = document.getElementById('my-lang').value;
         let translatedText = "";
 
-        // 내가 보낸 게 아니거나, 수신 언어가 한국어가 아닐 때 번역 시도
         if (m.sender !== me || myLang !== 'ko') {
             try {
                 const res = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(m.text)}&langpair=autodetect|${myLang}`);
@@ -168,7 +180,7 @@
         document.getElementById(id).classList.add('active');
     }
 
-    // 휴대폰 동작 감지 패치
+    // [보안 강화] AI 동작 감지 로직
     async function initAI() {
         const v = document.getElementById('v');
         const canvas = document.getElementById('c');
@@ -176,30 +188,43 @@
         const layer = document.getElementById('security-layer');
 
         try {
+            aiStatus.innerText = "카메라 시동 중...";
             const stream = await navigator.mediaDevices.getUserMedia({ 
                 video: { facingMode: "user", width: { ideal: 160 } }, 
                 audio: false 
             });
             v.srcObject = stream;
             await v.play();
+            
+            aiStatus.innerText = "보안 AI 로딩 중...";
             model = await blazeface.load();
+            aiStatus.innerText = "보안 모드 실시간 감시 중";
 
             async function detect() {
                 if (v.readyState === v.HAVE_ENOUGH_DATA) {
-                    canvas.width = 80; canvas.height = 60; // 초저해상도로 연산 속도 확보
+                    canvas.width = 100; canvas.height = 75;
                     ctx.drawImage(v, 0, 0, canvas.width, canvas.height);
+                    
                     const predictions = await model.estimateFaces(canvas, false);
                     
                     if (predictions.length === 0) {
                         layer.style.setProperty('display', 'flex', 'important');
+                        aiStatus.innerText = "⚠️ 사용자 감지 안됨 (보안막 작동)";
+                        aiStatus.style.color = "red";
                     } else {
                         layer.style.display = 'none';
+                        aiStatus.innerText = "✅ 사용자 확인됨";
+                        aiStatus.style.color = "#0f0";
                     }
                 }
-                setTimeout(detect, 300); // 0.3초마다 체크
+                // requestAnimationFrame을 사용하여 브라우저 렌더링에 맞춰 감지
+                requestAnimationFrame(detect);
             }
             detect();
-        } catch(e) { console.error("AI 보안 에러:", e); }
+        } catch(e) { 
+            aiStatus.innerText = "보안 오류: " + e.message;
+            aiStatus.style.color = "orange";
+        }
     }
 </script>
 </body>
