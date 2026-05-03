@@ -9,7 +9,7 @@ const io = new Server(server);
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-// 데이터 저장소 (실제 운영 시에는 DB 사용을 권장합니다)
+// 임시 데이터 저장소 (서버 배포 시 초기화됨)
 const users = {}; 
 const chatRooms = {}; 
 const userSockets = {}; 
@@ -27,29 +27,29 @@ io.on('connection', (socket) => {
                 loggedInUser = username;
                 userSockets[username] = socket.id;
                 socket.emit('loginSuccess', username);
-                socket.emit('updateFriends', users[username].friends);
-                socket.emit('updateRequests', users[username].requests);
+                socket.emit('updateFriends', users[username].friends || []);
+                socket.emit('updateRequests', users[username].requests || []);
             } else {
-                socket.emit('loginError', '아이디 또는 비밀번호가 틀렸습니다.');
+                socket.emit('loginError', '아이디 또는 비밀번호가 틀렸거나 서버가 재시작되어 계정이 삭제되었습니다. 다시 회원가입 해주세요.');
             }
         }
     });
 
-    // 친구 요청 처리
     socket.on('sendFriendRequest', (targetName) => {
         if (!users[targetName]) return socket.emit('sysError', '사용자를 찾을 수 없습니다.');
         if (targetName === loggedInUser) return socket.emit('sysError', '자기 자신은 추가할 수 없습니다.');
         if (users[targetName].friends.includes(loggedInUser)) return socket.emit('sysError', '이미 친구입니다.');
-        if (users[targetName].requests.includes(loggedInUser)) return socket.emit('sysError', '이미 요청을 보냈습니다.');
+        
+        if (!users[targetName].requests.includes(loggedInUser)) {
+            users[targetName].requests.push(loggedInUser);
+        }
 
-        users[targetName].requests.push(loggedInUser);
         if (userSockets[targetName]) {
             io.to(userSockets[targetName]).emit('updateRequests', users[targetName].requests);
         }
         socket.emit('sysError', '친구 요청을 보냈습니다.');
     });
 
-    // 수락/거절 처리
     socket.on('respondRequest', ({ sender, accept }) => {
         if (!users[loggedInUser]) return;
         users[loggedInUser].requests = users[loggedInUser].requests.filter(u => u !== sender);
