@@ -3,178 +3,148 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI KakaoTalk</title>
+    <title>Kakao DB Talk</title>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/models/blazeface"></script>
     <style>
         :root { --kakao-yellow: #FEE500; --kakao-brown: #391B1B; --bg-blue: #b2c7d9; }
-        body { font-family: 'Malgun Gothic', sans-serif; background: #eee; margin: 0; display: flex; justify-content: center; align-items: center; height: 100vh; }
-        #app { width: 360px; height: 640px; background: white; position: relative; display: flex; flex-direction: column; box-shadow: 0 10px 30px rgba(0,0,0,0.1); border-radius: 10px; overflow: hidden; }
-        .screen { display: none; flex-direction: column; height: calc(100% - 60px); width: 100%; }
+        body { margin: 0; font-family: 'Malgun Gothic', sans-serif; background: #eee; display: flex; justify-content: center; align-items: center; height: 100vh; }
+        #app { width: 360px; height: 640px; background: white; position: relative; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 10px 20px rgba(0,0,0,0.2); }
+        .page { display: none; flex-direction: column; height: calc(100% - 60px); width: 100%; }
         .active { display: flex; }
-        #login-screen { height: 100%; background: var(--kakao-yellow); justify-content: center; padding: 40px; box-sizing: border-box; }
-        input { padding: 12px; margin-bottom: 10px; border: 1px solid #ddd; border-radius: 4px; width: 100%; box-sizing: border-box; }
-        button { cursor: pointer; border: none; }
-        .btn-main { background: var(--kakao-brown); color: var(--kakao-yellow); padding: 12px; font-weight: bold; width: 100%; }
-        .header { padding: 20px; font-weight: bold; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #eee; }
-        .tab-bar { height: 60px; background: #f9f9f9; border-top: 1px solid #eee; display: flex; justify-content: space-around; align-items: center; }
-        #request-area { background: #fff9c4; padding: 10px; border-bottom: 1px solid #ddd; }
-        .msg { padding: 8px 12px; border-radius: 8px; font-size: 14px; margin-bottom: 5px; max-width: 70%; }
-        .my { background: var(--kakao-yellow); align-self: flex-end; }
-        .other { background: white; align-self: flex-start; }
-        #security-overlay { display: none; position: absolute; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.9); z-index: 9999; color: white; justify-content: center; align-items: center; }
-        #cam-view { position: absolute; bottom: 70px; right: 10px; width: 50px; height: 40px; opacity: 0; pointer-events: none; }
+        #login-page { height: 100%; background: var(--kakao-yellow); justify-content: center; padding: 40px; box-sizing: border-box; }
+        input { padding: 12px; margin-bottom: 8px; border: 1px solid #ddd; border-radius: 4px; width: 100%; box-sizing: border-box; }
+        .btn-main { background: var(--kakao-brown); color: var(--kakao-yellow); padding: 12px; border: none; font-weight: bold; width: 100%; cursor: pointer; }
+        .header { padding: 15px; font-weight: bold; display: flex; justify-content: space-between; border-bottom: 1px solid #eee; background: white; }
+        .footer { height: 60px; display: none; justify-content: space-around; align-items: center; background: #f9f9f9; border-top: 1px solid #eee; }
+        #security-layer { display: none; position: absolute; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.9); z-index: 1000; color: white; justify-content: center; align-items: center; }
     </style>
 </head>
 <body>
 
 <div id="app">
-    <div id="security-overlay"><h2>🔒 보안 모드</h2></div>
+    <div id="security-layer"><h2>🔒 보안 작동 중</h2></div>
 
-    <!-- 로그인 창 -->
-    <div id="login-screen" class="screen active">
+    <div id="login-page" class="page active">
         <h1 style="text-align:center; color:var(--kakao-brown)">KakaoTalk</h1>
-        <input type="text" id="username" placeholder="아이디">
-        <input type="password" id="password" placeholder="비밀번호">
-        <button class="btn-main" onclick="handleAuth(false)">로그인</button>
-        <button onclick="handleAuth(true)" style="background:none; margin-top:10px; border:1px solid #333; padding:10px; width:100%">회원가입</button>
+        <input type="text" id="uid" placeholder="아이디">
+        <input type="password" id="upw" placeholder="비밀번호">
+        <button class="btn-main" onclick="startAuth(false)">로그인</button>
+        <button onclick="startAuth(true)" style="background:none; border:1px solid #333; padding:10px; width:100%; margin-top:10px; cursor:pointer">회원가입</button>
     </div>
 
-    <!-- 친구 목록 -->
-    <div id="list-screen" class="screen">
-        <div class="header"><span>친구</span><span onclick="addFriendPrompt()" style="cursor:pointer">+</span></div>
-        <div id="request-area" style="display:none"></div>
-        <div id="friend-list" style="flex:1; overflow-y:auto"></div>
+    <div id="list-page" class="page">
+        <div class="header"><span>친구 목록</span><span onclick="addFriend()" style="cursor:pointer; font-size:20px">+</span></div>
+        <div id="req-list" style="background:#fff9c4;"></div>
+        <div id="f-list" style="flex:1; overflow-y:auto"></div>
     </div>
 
-    <!-- 채팅창 -->
-    <div id="chat-screen" class="screen">
-        <div class="header" style="background:var(--bg-blue)">
-            <span onclick="changeTab('list-screen')" style="cursor:pointer">←</span>
-            <span id="chat-with">대화방</span>
-        </div>
-        <div id="chat-box" style="flex:1; background:var(--bg-blue); padding:15px; overflow-y:auto; display:flex; flex-direction:column"></div>
+    <div id="chat-page" class="page">
+        <div class="header" style="background:var(--bg-blue)"><span onclick="showPage('list-page')">←</span><span id="target-name"></span></div>
+        <div id="chat-logs" style="flex:1; background:var(--bg-blue); padding:10px; overflow-y:auto; display:flex; flex-direction:column"></div>
         <div style="padding:10px; background:white; display:flex">
-            <input type="text" id="msg-input" style="flex:1; margin:0" placeholder="메시지 입력..." onkeypress="if(event.key==='Enter') sendMsg()">
-            <button onclick="sendMsg()" style="background:var(--kakao-yellow); padding:0 15px; margin-left:5px">전송</button>
+            <input type="text" id="msg-input" style="flex:1; margin:0" onkeypress="if(event.key==='Enter') send()">
+            <button onclick="send()" style="background:var(--kakao-yellow); border:none; padding:0 15px">전송</button>
         </div>
     </div>
 
-    <div id="footer" class="tab-bar" style="display:none">
-        <div onclick="changeTab('list-screen')" style="cursor:pointer">👤</div>
-        <div onclick="doLogout()" style="cursor:pointer">🔄</div>
+    <div id="footer-bar" class="footer">
+        <div onclick="showPage('list-page')" style="cursor:pointer">👤</div>
+        <div onclick="logout()" style="cursor:pointer">🔄</div>
     </div>
-
-    <video id="cam-view" autoplay muted></video>
+    <video id="webcam" style="display:none" autoplay muted></video>
 </div>
 
 <script src="/socket.io/socket.io.js"></script>
 <script>
     const socket = io();
-    let me = "", target = "", model;
+    let myId = "", targetId = "", aiModel;
 
-    // 1. 자동 로그인 체크
+    // 자동 로그인
     window.onload = () => {
-        const u = localStorage.getItem('u');
-        const p = localStorage.getItem('p');
+        const u = localStorage.getItem('talk_u'), p = localStorage.getItem('talk_p');
         if(u && p) socket.emit('login', { username: u, password: p, isSignUp: false });
     };
 
-    function handleAuth(isSignUp) {
-        const u = document.getElementById('username').value;
-        const p = document.getElementById('password').value;
-        if(!u || !p) return alert("내용을 입력하세요.");
-        
-        if(!isSignUp) { 
-            localStorage.setItem('u', u); 
-            localStorage.setItem('p', p); 
-        }
+    function startAuth(isSignUp) {
+        const u = document.getElementById('uid').value, p = document.getElementById('upw').value;
+        if(!u || !p) return alert("아이디와 비밀번호를 입력하세요.");
+        if(!isSignUp) { localStorage.setItem('talk_u', u); localStorage.setItem('talk_p', p); }
         socket.emit('login', { username: u, password: p, isSignUp });
     }
 
-    function doLogout() {
-        localStorage.clear();
-        location.reload();
-    }
+    function logout() { localStorage.clear(); location.reload(); }
 
     socket.on('loginSuccess', (user) => {
-        me = user;
-        document.getElementById('footer').style.display = 'flex';
-        changeTab('list-screen');
-        initAI();
+        myId = user;
+        document.getElementById('footer-bar').style.display = 'flex';
+        showPage('list-page');
+        initSecurity();
     });
 
-    socket.on('loginError', (m) => { localStorage.clear(); alert(m); });
-    socket.on('sysError', (m) => alert(m));
+    socket.on('loginError', m => { alert(m); logout(); });
+    socket.on('sysError', m => alert(m));
 
-    function addFriendPrompt() {
-        const t = prompt("추가할 아이디:");
+    function addFriend() {
+        const t = prompt("추가할 상대방 아이디를 입력하세요:");
         if(t) socket.emit('sendFriendRequest', t);
     }
 
-    // 친구 요청 목록 렌더링 및 버튼 바인딩
-    socket.on('updateRequests', (reqs) => {
-        const area = document.getElementById('request-area');
-        if(reqs && reqs.length > 0) {
-            area.style.display = 'block';
-            area.innerHTML = reqs.map(r => `
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px">
-                    <span>${r}님의 요청</span>
-                    <div>
-                        <button onclick="socket.emit('respondRequest',{sender:'${r}',accept:true})" style="background:#4caf50;color:white;padding:3px 7px;border-radius:3px">수락</button>
-                        <button onclick="socket.emit('respondRequest',{sender:'${r}',accept:false})" style="background:#f44336;color:white;padding:3px 7px;border-radius:3px">거절</button>
-                    </div>
-                </div>
-            `).join('');
-        } else { area.style.display = 'none'; }
-    });
-
-    socket.on('updateFriends', (fs) => {
-        const list = document.getElementById('friend-list');
-        list.innerHTML = fs.map(f => `
-            <div onclick="startChat('${f}')" style="padding:15px; border-bottom:1px solid #eee; cursor:pointer">👤 ${f}</div>
+    socket.on('updateRequests', reqs => {
+        const div = document.getElementById('req-list');
+        div.innerHTML = reqs.map(r => `
+            <div style="padding:10px; border-bottom:1px solid #ddd; display:flex; justify-content:space-between; align-items:center">
+                <span>${r}님의 친구 요청</span>
+                <button onclick="socket.emit('respondRequest',{sender:'${r}',accept:true})" style="background:#4caf50; color:white; border:none; padding:5px 10px; border-radius:3px">수락</button>
+            </div>
         `).join('');
     });
 
-    function startChat(f) {
-        target = f;
-        document.getElementById('chat-with').innerText = f;
-        document.getElementById('chat-box').innerHTML = '';
-        changeTab('chat-screen');
+    socket.on('updateFriends', fs => {
+        document.getElementById('f-list').innerHTML = fs.map(f => `
+            <div onclick="openChat('${f}')" style="padding:15px; border-bottom:1px solid #eee; cursor:pointer">👤 ${f}</div>
+        `).join('');
+    });
+
+    function openChat(f) {
+        targetId = f;
+        document.getElementById('target-name').innerText = f;
+        document.getElementById('chat-logs').innerHTML = '';
+        showPage('chat-page');
         socket.emit('joinRoom', f);
     }
 
-    function sendMsg() {
+    function send() {
         const i = document.getElementById('msg-input');
         if(!i.value) return;
-        socket.emit('sendMessage', { sender: me, receiver: target, text: i.value, lang: 'ko' });
+        socket.emit('sendMessage', { sender: myId, receiver: targetId, text: i.value });
         i.value = '';
     }
 
     socket.on('receiveMessage', m => {
-        const b = document.getElementById('chat-box');
-        const d = document.createElement('div');
-        d.className = `msg ${m.sender === me ? 'my' : 'other'}`;
-        d.innerText = m.text;
-        b.appendChild(d);
-        b.scrollTop = b.scrollHeight;
+        const box = document.getElementById('chat-logs');
+        const msgDiv = document.createElement('div');
+        msgDiv.style = `padding:8px 12px; margin:5px; border-radius:10px; max-width:70%; font-size:14px; ${m.sender === myId ? 'align-self:flex-end; background:var(--kakao-yellow)' : 'align-self:flex-start; background:white'}`;
+        msgDiv.innerText = m.text;
+        box.appendChild(msgDiv);
+        box.scrollTop = box.scrollHeight;
     });
 
-    function changeTab(id) {
-        document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    function showPage(id) {
+        document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
         document.getElementById(id).classList.add('active');
     }
 
-    async function initAI() {
+    async function initSecurity() {
         try {
-            const s = await navigator.mediaDevices.getUserMedia({ video: true });
-            document.getElementById('cam-view').srcObject = s;
-            model = await blazeface.load();
+            const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+            document.getElementById('webcam').srcObject = stream;
+            aiModel = await blazeface.load();
             setInterval(async () => {
-                const p = await model.estimateFaces(document.getElementById('cam-view'), false);
-                document.getElementById('security-overlay').style.display = p.length === 0 ? 'flex' : 'none';
+                const predictions = await aiModel.estimateFaces(document.getElementById('webcam'), false);
+                document.getElementById('security-layer').style.display = predictions.length === 0 ? 'flex' : 'none';
             }, 800);
-        } catch(e) {}
+        } catch(e) { console.log("카메라 권한 거부됨"); }
     }
 </script>
 </body>
