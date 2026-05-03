@@ -4,25 +4,24 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>AI Secure Messenger</title>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/models/blazeface"></script>
+    <!-- TF.js 및 BlazeFace 모델 명시적 로드 -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.11.0/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface@0.0.7/dist/blazeface.min.js"></script>
     <style>
         :root { --k-y: #FEE500; --k-b: #391B1B; --bg: #b2c7d9; }
         body { margin: 0; font-family: sans-serif; background: #eee; height: 100vh; overflow: hidden; }
         #app { width: 100%; max-width: 360px; height: 100%; margin: 0 auto; background: white; position: relative; display: flex; flex-direction: column; }
         
-        /* 보안 레이어: 최상위 우선순위 */
         #security-layer { 
             display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; 
             background: black !important; z-index: 999999 !important; color: white; 
             flex-direction: column; justify-content: center; align-items: center; 
         }
 
-        /* AI 상태 표시기 (테스트용) */
         #ai-status { 
-            position: fixed; top: 0; width: 100%; background: rgba(0,0,0,0.6); 
-            color: #0f0; font-size: 10px; text-align: center; z-index: 1000000; padding: 2px;
-            pointer-events: none; 
+            position: fixed; top: 0; width: 100%; background: rgba(0,0,0,0.7); 
+            color: #0f0; font-size: 11px; text-align: center; z-index: 1000000; padding: 4px 0;
+            pointer-events: none; font-weight: bold;
         }
 
         .page { display: none; flex-direction: column; height: calc(100% - 60px); width: 100%; }
@@ -42,17 +41,14 @@
 </head>
 <body>
 <div id="app">
-    <!-- AI 상태바 -->
-    <div id="ai-status">AI 대기 중...</div>
+    <div id="ai-status">시스템 준비 중...</div>
 
-    <!-- 보안 레이어 -->
     <div id="security-layer">
         <div style="font-size: 50px;">🔒</div>
         <div style="font-size: 20px; font-weight: bold; margin-top:20px;">보안 모드 작동 중</div>
-        <p style="color: #888;">주변에 사용자가 감지되지 않습니다.</p>
+        <p style="color: #888;">화면 앞에 사용자가 없습니다.</p>
     </div>
     
-    <!-- 로그인 페이지 -->
     <div id="login-page" class="page active">
         <h2 style="text-align:center;">Global AI Talk</h2>
         <input id="u" placeholder="아이디">
@@ -61,18 +57,15 @@
         <button class="btn" style="background:none; border:1px solid #333; margin-top:5px" onclick="auth(true)">회원가입</button>
     </div>
 
-    <!-- 리스트 페이지 -->
     <div id="list-page" class="page">
         <div class="header"><span>친구 목록</span><span onclick="addF()" style="cursor:pointer; font-size: 20px;">+</span></div>
-        <div id="req-box"></div>
         <div id="f-list" style="flex:1; overflow-y:auto"></div>
     </div>
 
-    <!-- 채팅 페이지 -->
     <div id="chat-page" class="page">
         <div class="header" style="background:var(--bg)"><span onclick="showP('list-page')">←</span><span id="c-t"></span><span></span></div>
         <div class="trans-bar">
-            <strong>자동 번역 언어:</strong>
+            <strong>번역 언어:</strong>
             <select id="my-lang" style="width:auto; padding:2px;">
                 <option value="ko">한국어</option>
                 <option value="en">English</option>
@@ -92,7 +85,6 @@
         <div onclick="logout()" style="cursor:pointer">🔄</div>
     </div>
 
-    <!-- 카메라 요소 (휴대폰 가속 유지용) -->
     <video id="v" style="position: fixed; top: 0; left: 0; width: 1px; height: 1px; opacity: 0.1; pointer-events: none;" autoplay muted playsinline></video>
     <canvas id="c" style="display:none;"></canvas>
 </div>
@@ -100,7 +92,7 @@
 <script src="/socket.io/socket.io.js"></script>
 <script>
     const socket = io();
-    let me = "", target = "", model;
+    let me = "", target = "", model = null;
     const aiStatus = document.getElementById('ai-status');
 
     function auth(isSignUp) {
@@ -180,7 +172,7 @@
         document.getElementById(id).classList.add('active');
     }
 
-    // [보안 강화] AI 동작 감지 로직
+    // --- AI 보안 핵심 로직 (보정판) ---
     async function initAI() {
         const v = document.getElementById('v');
         const canvas = document.getElementById('c');
@@ -188,42 +180,54 @@
         const layer = document.getElementById('security-layer');
 
         try {
-            aiStatus.innerText = "카메라 시동 중...";
+            // 1. 라이브러리 로드 대기 (중요)
+            let waitTime = 0;
+            while (typeof blazeface === 'undefined' || typeof tf === 'undefined') {
+                aiStatus.innerText = "AI 엔진 로드 중... (" + waitTime + "s)";
+                await new Promise(r => setTimeout(r, 500));
+                waitTime++;
+                if(waitTime > 20) throw new Error("네트워크 연결이 불안정하여 AI를 불러올 수 없습니다.");
+            }
+
+            // 2. 카메라 권한 확인
+            aiStatus.innerText = "카메라 권한 확인 중...";
             const stream = await navigator.mediaDevices.getUserMedia({ 
-                video: { facingMode: "user", width: { ideal: 160 } }, 
+                video: { facingMode: "user", width: 160 }, 
                 audio: false 
             });
             v.srcObject = stream;
             await v.play();
             
-            aiStatus.innerText = "보안 AI 로딩 중...";
+            // 3. 모델 로드
+            aiStatus.innerText = "보안 모델 최적화 중...";
             model = await blazeface.load();
-            aiStatus.innerText = "보안 모드 실시간 감시 중";
+            aiStatus.innerText = "✅ 보안 시스템 가동 중";
 
+            // 4. 감지 루프
             async function detect() {
-                if (v.readyState === v.HAVE_ENOUGH_DATA) {
+                if (v.readyState === v.HAVE_ENOUGH_DATA && model) {
                     canvas.width = 100; canvas.height = 75;
                     ctx.drawImage(v, 0, 0, canvas.width, canvas.height);
                     
                     const predictions = await model.estimateFaces(canvas, false);
                     
                     if (predictions.length === 0) {
-                        layer.style.setProperty('display', 'flex', 'important');
-                        aiStatus.innerText = "⚠️ 사용자 감지 안됨 (보안막 작동)";
-                        aiStatus.style.color = "red";
+                        layer.style.display = 'flex';
+                        aiStatus.innerText = "⚠️ 보안 작동 (얼굴 없음)";
+                        aiStatus.style.color = "#ff4d4d";
                     } else {
                         layer.style.display = 'none';
-                        aiStatus.innerText = "✅ 사용자 확인됨";
-                        aiStatus.style.color = "#0f0";
+                        aiStatus.innerText = "✅ 보안 작동 (사용자 확인)";
+                        aiStatus.style.color = "#00ff00";
                     }
                 }
-                // requestAnimationFrame을 사용하여 브라우저 렌더링에 맞춰 감지
                 requestAnimationFrame(detect);
             }
             detect();
         } catch(e) { 
             aiStatus.innerText = "보안 오류: " + e.message;
-            aiStatus.style.color = "orange";
+            aiStatus.style.color = "#ffae00";
+            console.error(e);
         }
     }
 </script>
